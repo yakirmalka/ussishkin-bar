@@ -80,10 +80,10 @@
     </div>
 
     <script>
-        const firebaseConfig = {
+        const firebaseConfigSummary = {
             databaseURL: "https://ussishkinpub-default-rtdb.europe-west1.firebasedatabase.app"
         };
-        firebase.initializeApp(firebaseConfig);
+        firebase.initializeApp(firebaseConfigSummary);
         const db = firebase.database();
 
         const todayStr = new Date().toISOString().split('T')[0];
@@ -123,13 +123,26 @@
                 Object.keys(data).forEach(key => {
                     const order = data[key];
                     
-                    // המרת ה-timestamp למחרוזת תאריך תקפה (YYYY-MM-DD)
                     let orderDate = '';
-                    let timeFormatted = '';
+                    let timeFormatted = 'לא ידוע';
+
                     if (order.timestamp) {
-                        const dateObj = new Date(order.timestamp);
-                        orderDate = dateObj.toISOString().split('T')[0];
-                        timeFormatted = dateObj.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                        try {
+                            const dateObj = new Date(typeof order.timestamp === 'number' ? order.timestamp : Number(order.timestamp) || order.timestamp);
+                            if (!isNaN(dateObj.getTime())) {
+                                orderDate = dateObj.toISOString().split('T')[0];
+                                timeFormatted = dateObj.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                            } else if (typeof order.timestamp === 'string') {
+                                orderDate = order.timestamp.split('T')[0];
+                                timeFormatted = order.timestamp;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing date:', e);
+                        }
+                    }
+
+                    if (!orderDate) {
+                        orderDate = todayStr;
                     }
 
                     if (!filterDate || orderDate === filterDate) {
@@ -176,164 +189,12 @@
                         let orderTotal = (Number(order.price) || 0) * (Number(order.qty) || 1);
                         ordersListTable.innerHTML += `
                             <tr class="hover:bg-gray-50">
-                                <td class="p-3 border text-sm text-gray-600">${order.timeFormatted || 'לא ידוע'}</td>
+                                <td class="p-3 border text-sm text-gray-600">${order.timeFormatted}</td>
                                 <td class="p-3 border font-semibold">${order.clientName || 'אורח'}</td>
                                 <td class="p-3 border">${order.memberId || '-'}</td>
                                 <td class="p-3 border">${order.drink || ''}</td>
                                 <td class="p-3 border">${order.qty || 1}</td>
                                 <td class="p-3 border text-blue-600 font-bold">₪${orderTotal}</td>
-                            </tr>
-                        `;
-                    });
-                }
-            });
-        }
-
-        loadOrders(todayStr);
-    </script>
-</body>
-</html>            </div>
-        </div>
-
-        <!-- פילוח מוצרים נמכרים -->
-        <div class="mb-8">
-            <h2 class="text-xl font-bold text-gray-800 mb-3">🍺 פילוח מוצרים שנמכרו</h2>
-            <div class="overflow-x-auto">
-                <table class="w-full text-right border-collapse">
-                    <thead>
-                        <tr class="bg-gray-200 text-gray-700">
-                            <th class="p-3 border">שם המוצר</th>
-                            <th class="p-3 border">כמות שנמכרה</th>
-                            <th class="p-3 border">סה"כ הכנסה מהמוצר</th>
-                        </tr>
-                    </thead>
-                    <tbody id="productsSummaryTable">
-                        <tr><td colspan="3" class="text-center p-4 text-gray-500">בחר תאריך או טען נתונים</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- פירוט כל ההזמנות -->
-        <div>
-            <h2 class="text-xl font-bold text-gray-800 mb-3">📝 פירוט הזמנות</h2>
-            <div class="overflow-x-auto">
-                <table class="w-full text-right border-collapse">
-                    <thead>
-                        <tr class="bg-gray-200 text-gray-700">
-                            <th class="p-3 border">שעה / תאריך</th>
-                            <th class="p-3 border">לקוח / שולחן</th>
-                            <th class="p-3 border">פירוט פריטים</th>
-                            <th class="p-3 border">סה"כ לתשלום</th>
-                        </tr>
-                    </thead>
-                    <tbody id="ordersListTable">
-                        <tr><td colspan="4" class="text-center p-4 text-gray-500">אין נתונים להצגה</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        const firebaseConfig = {
-            databaseURL: "https://ussishkinpub-default-rtdb.europe-west1.firebasedatabase.app"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
-
-        // הגדרת תאריך ברירת מחדל להיום
-        const todayStr = new Date().toISOString().split('T')[0];
-        document.getElementById('dateFilter').value = todayStr;
-
-        document.getElementById('filterBtn').addEventListener('click', () => {
-            const selectedDate = document.getElementById('dateFilter').value;
-            loadOrders(selectedDate);
-        });
-
-        document.getElementById('allTimeBtn').addEventListener('click', () => {
-            loadOrders(null);
-        });
-
-        function loadOrders(filterDate) {
-            const ordersRef = db.ref('orders');
-            ordersRef.once('value').then((snapshot) => {
-                const data = snapshot.val();
-                const ordersListTable = document.getElementById('ordersListTable');
-                const productsSummaryTable = document.getElementById('productsSummaryTable');
-                
-                ordersListTable.innerHTML = '';
-                productsSummaryTable.innerHTML = '';
-
-                if (!data) {
-                    ordersListTable.innerHTML = '<tr><td colspan="4" class="text-center p-4 text-gray-500">אין הזמנות במסד הנתונים</td></tr>';
-                    document.getElementById('totalRevenue').innerText = '₪0';
-                    document.getElementById('totalOrdersCount').innerText = '0';
-                    return;
-                }
-
-                let totalRev = 0;
-                let orderCount = 0;
-                let productStats = {}; 
-                let filteredOrders = [];
-
-                Object.keys(data).forEach(key => {
-                    const order = data[key];
-                    let orderDate = order.date || (order.timestamp ? order.timestamp.split('T')[0] : '');
-                    
-                    if (!filterDate || orderDate === filterDate) {
-                        filteredOrders.push(order);
-                        totalRev += Number(order.total || 0);
-                        orderCount++;
-
-                        if (order.items && Array.isArray(order.items)) {
-                            order.items.forEach(item => {
-                                let pName = item.name || 'מוצר לא ידוע';
-                                let pQty = Number(item.quantity || 1);
-                                let pPrice = Number(item.price || 0) * pQty;
-
-                                if (!productStats[pName]) {
-                                    productStats[pName] = { count: 0, revenue: 0 };
-                                }
-                                productStats[pName].count += pQty;
-                                productStats[pName].revenue += pPrice;
-                            });
-                        }
-                    }
-                });
-
-                document.getElementById('totalRevenue').innerText = '₪' + totalRev;
-                document.getElementById('totalOrdersCount').innerText = orderCount;
-
-                if (Object.keys(productStats).length === 0) {
-                    productsSummaryTable.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-500">אין נתונים לתאריך זה</td></tr>';
-                } else {
-                    Object.keys(productStats).forEach(pName => {
-                        let stat = productStats[pName];
-                        productsSummaryTable.innerHTML += `
-                            <tr class="hover:bg-gray-50">
-                                <td class="p-3 border">${pName}</td>
-                                <td class="p-3 border font-bold">${stat.count}</td>
-                                <td class="p-3 border text-green-600 font-bold">₪${stat.revenue}</td>
-                            </tr>
-                        `;
-                    });
-                }
-
-                if (filteredOrders.length === 0) {
-                    ordersListTable.innerHTML = '<tr><td colspan="4" class="text-center p-4 text-gray-500">אין הזמנות לתאריך זה</td></tr>';
-                } else {
-                    filteredOrders.reverse().forEach(order => {
-                        let itemsText = '';
-                        if (order.items && Array.isArray(order.items)) {
-                            itemsText = order.items.map(i => `${i.name} (x${i.quantity})`).join(', ');
-                        }
-                        ordersListTable.innerHTML += `
-                            <tr class="hover:bg-gray-50">
-                                <td class="p-3 border text-sm text-gray-600">${order.timestamp || 'לא ידוע'}</td>
-                                <td class="p-3 border font-semibold">${order.customerName || 'אורח'}</td>
-                                <td class="p-3 border">${itemsText}</td>
-                                <td class="p-3 border text-blue-600 font-bold">₪${order.total || 0}</td>
                             </tr>
                         `;
                     });
