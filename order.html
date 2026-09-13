@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>הזמנת משקאות - בר</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #121212; color: #e0e0e0; margin: 0; padding: 20px; }
+        .container { max-width: 500px; margin: auto; background: #1e1e1e; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        h1 { color: #ffb74d; text-align: center; }
+        label { display: block; margin-top: 15px; font-weight: bold; }
+        input, select, button { width: 100%; padding: 12px; margin-top: 5px; border-radius: 4px; border: 1px solid #444; background: #333; color: #fff; box-sizing: border-box; font-size: 16px; }
+        button { background: #ff9800; color: #000; font-weight: bold; cursor: pointer; border: none; margin-top: 20px; }
+        button:hover { background: #e68900; }
+        .closed-msg { color: #f44336; text-align: center; font-size: 18px; font-weight: bold; margin-top: 30px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🍸 הזמנה מהבר</h1>
+    
+    <div id="orderFormContainer">
+        <form id="orderForm" onsubmit="submitOrder(event)">
+            <label>שם מלא:</label>
+            <input type="text" id="clientName" required placeholder="הכנס שם מלא">
+            
+            <label>מספר חבר:</label>
+            <input type="text" id="memberId" required placeholder="הכנס מספר חבר">
+            
+            <label>בחר משקה:</label>
+            <select id="drinkSelect" onchange="updatePriceDisplay()" required></select>
+            
+            <label>מחיר ליחידה: <span id="selectedDrinkPrice" style="color:#ffb74d">0</span> ₪</label>
+
+            <label>כמות:</label>
+            <input type="number" id="drinkQty" value="1" min="1" required>
+
+            <button type="submit">שלח הזמנה לבר</button>
+        </form>
+    </div>
+    <div id="closedNotice" class="closed-msg" style="display: none;">הבר סגור כרגע להזמנות. אנא המתן לפתיחת יום עבודה.</div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getDatabase, ref, push, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDiqurgDyB2IwQUheisvCnS06sWiNv88Pw",
+        authDomain: "ussishkinpub.firebaseapp.com",
+        databaseURL: "https://ussishkinpub-default-rtdb.firebaseio.com",
+        projectId: "ussishkinpub",
+        storageBucket: "ussishkinpub.firebasestorage.app",
+        messagingSenderId: "571602412205",
+        appId: "1:571602412205:web:54f97c832c1e8996375c24",
+        measurementId: "G-7VPNEK0ENH"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    let drinks = [];
+
+    // בדיקה האם היום פתוח וטעינת תפריט
+    const statusRef = ref(db, 'status/isDayOpen');
+    onValue(statusRef, (snapshot) => {
+        const isOpen = snapshot.val();
+        if (isOpen) {
+            document.getElementById('orderFormContainer').style.display = 'block';
+            document.getElementById('closedNotice').style.display = 'none';
+            loadDrinks();
+        } else {
+            document.getElementById('orderFormContainer').style.display = 'none';
+            document.getElementById('closedNotice').style.display = 'block';
+        }
+    });
+
+    function loadDrinks() {
+        const drinksRef = ref(db, 'drinks');
+        onValue(drinksRef, (snapshot) => {
+            const data = snapshot.val();
+            const select = document.getElementById('drinkSelect');
+            select.innerHTML = '';
+            drinks = [];
+            if (data) {
+                Object.keys(data).forEach(key => {
+                    drinks.push({ id: key, ...data[key] });
+                });
+                drinks.forEach(d => {
+                    let opt = document.createElement('option');
+                    opt.value = d.name;
+                    opt.textContent = `${d.name} (${d.price} ₪)`;
+                    select.appendChild(opt);
+                });
+                updatePriceDisplay();
+            }
+        });
+    }
+
+    window.updatePriceDisplay = function() {
+        const selectedName = document.getElementById('drinkSelect').value;
+        const found = drinks.find(d => d.name === selectedName);
+        document.getElementById('selectedDrinkPrice').textContent = found ? found.price : 0;
+    }
+
+    window.submitOrder = function(event) {
+        event.preventDefault();
+        const drinkName = document.getElementById('drinkSelect').value;
+        const qty = parseInt(document.getElementById('drinkQty').value);
+        const drinkObj = drinks.find(d => d.name === drinkName);
+        
+        const newOrder = {
+            clientName: document.getElementById('clientName').value,
+            memberId: document.getElementById('memberId').value,
+            drink: drinkName,
+            qty: qty,
+            price: drinkObj ? drinkObj.price : 0,
+            timestamp: Date.now()
+        };
+
+        push(ref(db, 'orders'), newOrder).then(() => {
+            alert('ההזמנה נשלחה בהצלחה אל הבר!');
+            document.getElementById('orderForm').reset();
+            updatePriceDisplay();
+        }).catch((error) => {
+            alert('שגיאה בשליחת ההזמנה: ' + error.message);
+        });
+    }
+</script>
+
+</body>
+</html>
