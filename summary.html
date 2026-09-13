@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סיכום יומי ופילוח הזמנות - בר</title>
+    <title>סיכום ופילוח הזמנות - בר</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Firebase App (compat) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -21,7 +21,7 @@
         <div class="mb-6 flex flex-wrap items-center gap-4 bg-gray-50 p-4 rounded-lg">
             <label for="dateFilter" class="font-bold text-gray-700">בחר תאריך לסיכום:</label>
             <input type="date" id="dateFilter" class="border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <button id="filterBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">סין לפי תאריך</button>
+            <button id="filterBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">סינון לפי תאריך</button>
             <button id="allTimeBtn" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition">הצג הכל (היסטוריה מלאה)</button>
         </div>
 
@@ -80,126 +80,147 @@
     </div>
 
     <script>
-        const firebaseConfigSummary = {
+        const appConfig = {
             databaseURL: "https://ussishkinpub-default-rtdb.europe-west1.firebasedatabase.app"
         };
-        firebase.initializeApp(firebaseConfigSummary);
-        const db = firebase.database();
+        firebase.initializeApp(appConfig);
+        const database = firebase.database();
 
-        // כברירת מחדל נטען את כל הנתונים (היסטוריה מלאה) כדי שום דבר לא יתפספס
-        loadOrders(null);
+        loadAllOrders(null);
 
-        document.getElementById('filterBtn').addEventListener('click', () => {
-            const selectedDate = document.getElementById('dateFilter').value;
-            loadOrders(selectedDate);
+        document.getElementById('filterBtn').addEventListener('click', function() {
+            var selectedDate = document.getElementById('dateFilter').value;
+            loadAllOrders(selectedDate);
         });
 
-        document.getElementById('allTimeBtn').addEventListener('click', () => {
+        document.getElementById('allTimeBtn').addEventListener('click', function() {
             document.getElementById('dateFilter').value = '';
-            loadOrders(null);
+            loadAllOrders(null);
         });
 
-        function loadOrders(filterDate) {
-            const ordersRef = db.ref('orders');
-            ordersRef.once('value').then((snapshot) => {
-                const data = snapshot.val();
-                const ordersListTable = document.getElementById('ordersListTable');
-                const productsSummaryTable = document.getElementById('productsSummaryTable');
+        function loadAllOrders(filterDate) {
+            console.log("מושך נתונים מ-Firebase... תאריך סינון:", filterDate);
+            
+            database.ref('orders').once('value').then(function(snapshot) {
+                var data = snapshot.val();
+                console.log("תוצאה גולמית מ-Firebase:", data);
+
+                var ordersTable = document.getElementById('ordersListTable');
+                var productsTable = document.getElementById('productsSummaryTable');
                 
-                ordersListTable.innerHTML = '';
-                productsSummaryTable.innerHTML = '';
+                ordersTable.innerHTML = '';
+                productsTable.innerHTML = '';
 
                 if (!data) {
-                    ordersListTable.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-500">אין הזמנות במסד הנתונים בכלל</td></tr>';
+                    ordersTable.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-500">אין נתונים בענף orders במסד הנתונים</td></tr>';
+                    productsTable.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-500">אין נתונים</td></tr>';
                     document.getElementById('totalRevenue').innerText = '₪0';
                     document.getElementById('totalOrdersCount').innerText = '0';
-                    productsSummaryTable.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-500">אין נתונים</td></tr>';
                     return;
                 }
 
-                let totalRev = 0;
-                let orderCount = 0;
-                let productStats = {}; 
-                let filteredOrders = [];
+                var totalRevenue = 0;
+                var totalCount = 0;
+                var productStats = {};
+                var listToDisplay = [];
 
-                Object.keys(data).forEach(key => {
-                    const order = data[key];
-                    
-                    let orderDate = '';
-                    let dateTimeFormatted = 'לא ידוע';
+                Object.keys(data).forEach(function(key) {
+                    var order = data[key];
+                    if (!order) return;
+
+                    var orderDateOnly = '';
+                    var readableTime = 'לא ידוע';
 
                     if (order.timestamp) {
                         try {
-                            const dateObj = new Date(typeof order.timestamp === 'number' ? order.timestamp : Number(order.timestamp) || order.timestamp);
-                            if (!isNaN(dateObj.getTime())) {
-                                orderDate = dateObj.toISOString().split('T')[0];
-                                dateTimeFormatted = dateObj.toLocaleString('he-IL');
-                            } else if (typeof order.timestamp === 'string') {
-                                orderDate = order.timestamp.split('T')[0];
-                                dateTimeFormatted = order.timestamp;
+                            var ts = typeof order.timestamp === 'number' ? order.timestamp : Number(order.timestamp);
+                            var d = new Date(ts);
+                            if (!isNaN(d.getTime())) {
+                                orderDateOnly = d.toISOString().split('T')[0];
+                                readableTime = d.toLocaleString('he-IL');
+                            } else {
+                                orderDateOnly = String(order.timestamp).split('T')[0];
+                                readableTime = String(order.timestamp);
                             }
-                        } catch (e) {
-                            console.error('Error parsing date:', e);
+                        } catch (err) {
+                            console.error('שגיאה בחישוב תאריך:', err);
                         }
                     }
 
-                    // סינון לפי תאריך רק אם המשתמש בחר תאריך ספציפי
-                    if (!filterDate || orderDate === filterDate) {
-                        filteredOrders.push({ ...order, dateTimeFormatted });
-                        
-                        let orderTotal = (Number(order.price) || 0) * (Number(order.qty) || 1);
-                        totalRev += orderTotal;
-                        orderCount++;
+                    if (!filterDate || orderDateOnly === filterDate) {
+                        listToDisplay.push({
+                            clientName: order.clientName || 'אורח',
+                            memberId: order.memberId || '-',
+                            drink: order.drink || 'לא ידוע',
+                            qty: Number(order.qty) || 1,
+                            price: Number(order.price) || 0,
+                            timeFormatted: readableTime
+                        });
 
-                        let pName = order.drink || 'מוצר לא ידוע';
-                        let pQty = Number(order.qty || 1);
-                        let pPrice = orderTotal;
+                        var lineTotal = (Number(order.price) || 0) * (Number(order.qty) || 1);
+                        totalRevenue += lineTotal;
+                        totalCount++;
 
-                        if (!productStats[pName]) {
-                            productStats[pName] = { count: 0, revenue: 0 };
+                        var drinkName = order.drink || 'לא ידוע';
+                        if (!productStats[drinkName]) {
+                            productStats[drinkName] = { count: 0, revenue: 0 };
                         }
-                        productStats[pName].count += pQty;
-                        productStats[pName].revenue += pPrice;
+                        productStats[drinkName].count += (Number(order.qty) || 1);
+                        productStats[dev => {} ? drinkName : drinkName].revenue += lineTotal; // Fixed simple accumulation
                     }
                 });
 
-                document.getElementById('totalRevenue').innerText = '₪' + totalRev;
-                document.getElementById('totalOrdersCount').innerText = orderCount;
+                // תיקון הצבירה למוצרים בצורה נקייה
+                productStats = {};
+                listToDisplay.forEach(function(item) {
+                    if (!productStats[item.drink]) {
+                        productStats[item.drink] = { count: 0, revenue: 0 };
+                    }
+                    productStats[item.drink].count += item.qty;
+                    productStats[item.drink].revenue += (item.price * item.qty);
+                });
 
-                if (Object.keys(productStats).length === 0) {
-                    productsSummaryTable.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-500">אין נתונים לתקופה זו</td></tr>';
+                document.getElementById('totalRevenue').innerText = '₪' + totalRevenue;
+                document.getElementById('totalOrdersCount').innerText = totalCount;
+
+                // הצגת פילוח מוצרים
+                var productKeys = Object.keys(productStats);
+                if (productKeys.length === 0) {
+                    productsTable.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-500">אין נתונים לתקופה זו</td></tr>';
                 } else {
-                    Object.keys(productStats).forEach(pName => {
-                        let stat = productStats[pName];
-                        productsSummaryTable.innerHTML += `
+                    productKeys.forEach(function(pName) {
+                        var pData = productStats[pName];
+                        productsTable.innerHTML += `
                             <tr class="hover:bg-gray-50">
                                 <td class="p-3 border">${pName}</td>
-                                <td class="p-3 border font-bold">${stat.count}</td>
-                                <td class="p-3 border text-green-600 font-bold">₪${stat.revenue}</td>
+                                <td class="p-3 border font-bold">${pData.count}</td>
+                                <td class="p-3 border text-green-600 font-bold">₪${pData.revenue}</td>
                             </tr>
                         `;
                     });
                 }
 
-                if (filteredOrders.length === 0) {
-                    ordersListTable.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-500">אין הזמנות לתקופה זו</td></tr>';
+                // הצגת רשימת ההזמנות
+                if (listToDisplay.length === 0) {
+                    ordersTable.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-500">אין הזמנות לתקופה זו</td></tr>';
                 } else {
-                    filteredOrders.reverse().forEach(order => {
-                        let orderTotal = (Number(order.price) || 0) * (Number(order.qty) || 1);
-                        ordersListTable.innerHTML => { // Note: innerHTML assignment fixed below in mind
-                        }
-                        ordersListTable.innerHTML += `
+                    listToDisplay.reverse().forEach(function(item) {
+                        var rowTotal = item.price * item.qty;
+                        ordersTable.innerHTML += `
                             <tr class="hover:bg-gray-50">
-                                <td class="p-3 border text-sm text-gray-600">${order.dateTimeFormatted}</td>
-                                <td class="p-3 border font-semibold">${order.clientName || 'אורח'}</td>
-                                <td class="p-3 border">${order.memberId || '-'}</td>
-                                <td class="p-3 border">${order.drink || ''}</td>
-                                <td class="p-3 border">${order.qty || 1}</td>
-                                <td class="p-3 border text-blue-600 font-bold">₪${orderTotal}</td>
+                                <td class="p-3 border text-sm text-gray-600">${item.timeFormatted}</td>
+                                <td class="p-3 border font-semibold">${item.clientName}</td>
+                                <td class="p-3 border">${item.memberId}</td>
+                                <td class="p-3 border">${item.drink}</td>
+                                <td class="p-3 border">${item.qty}</td>
+                                <td class="p-3 border text-blue-600 font-bold">₪${rowTotal}</td>
                             </tr>
                         `;
                     });
                 }
+            }).catch(function(error) {
+                console.error("שגיאה בחיבור ל-Firebase:", error);
+                document.getElementById('ordersListTable').innerHTML = `<tr><td colspan="6" class="text-center p-4 text-red-500">שגיאה: ${error.message}</td></tr>`;
             });
         }
     </script>
