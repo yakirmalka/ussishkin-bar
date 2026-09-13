@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>סיכום יומי ופילוח הזמנות - בר</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase App (compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <!-- Firebase Realtime Database (compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-4">
+    <div class="max-w-4xl mx-auto bg-white rounded-xl shadow-lg p-6">
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <h1 class="text-2xl font-bold text-gray-800">📊 סיכום יומי ופילוח הזמנות</h1>
+            <a href="index.html" class="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition">חזרה לניהול</a>
+        </div>
+
+        <!-- בחירת תאריך -->
+        <div class="mb-6 flex flex-wrap items-center gap-4 bg-gray-50 p-4 rounded-lg">
+            <label for="dateFilter" class="font-bold text-gray-700">בחר תאריך לסיכום:</label>
+            <input type="date" id="dateFilter" class="border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button id="filterBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">הצג סיכום</button>
+            <button id="allTimeBtn" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition">הצג הכל</button>
+        </div>
+
+        <!-- כרטיסי סיכום ראשיים -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg text-center">
+                <h3 class="text-gray-600 font-semibold">סה"כ הכנסות לתקופה</h3>
+                <p id="totalRevenue" class="text-3xl font-bold text-blue-600 mt-2">₪0</p>
+            </div>
+            <div class="bg-purple-50 border border-purple-200 p-4 rounded-lg text-center">
+                <h3 class="text-gray-600 font-semibold">סה"כ הזמנות</h3>
+                <p id="totalOrdersCount" class="text-3xl font-bold text-purple-600 mt-2">0</p>
+            </div>
+        </div>
+
+        <!-- פילוח מוצרים נמכרים -->
+        <div class="mb-8">
+            <h2 class="text-xl font-bold text-gray-800 mb-3">🍺 פילוח מוצרים שנמכרו</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-right border-collapse">
+                    <thead>
+                        <tr class="bg-gray-200 text-gray-700">
+                            <th class="p-3 border">שם המוצר</th>
+                            <th class="p-3 border">כמות שנמכרה</th>
+                            <th class="p-3 border">סה"כ הכנסה מהמוצר</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productsSummaryTable">
+                        <tr><td colspan="3" class="text-center p-4 text-gray-500">בחר תאריך או טען נתונים</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- פירוט כל ההזמנות -->
+        <div>
+            <h2 class="text-xl font-bold text-gray-800 mb-3">📝 פירוט הזמנות</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-right border-collapse">
+                    <thead>
+                        <tr class="bg-gray-200 text-gray-700">
+                            <th class="p-3 border">שעה / תאריך</th>
+                            <th class="p-3 border">לקוח / שולחן</th>
+                            <th class="p-3 border">פירוט פריטים</th>
+                            <th class="p-3 border">סה"כ לתשלום</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ordersListTable">
+                        <tr><td colspan="4" class="text-center p-4 text-gray-500">אין נתונים להצגה</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            databaseURL: "https://ussishkinpub-default-rtdb.europe-west1.firebasedatabase.app"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // הגדרת תאריך ברירת מחדל להיום
+        const todayStr = new Date().toISOString().split('T')[0];
+        document.getElementById('dateFilter').value = todayStr;
+
+        document.getElementById('filterBtn').addEventListener('click', () => {
+            const selectedDate = document.getElementById('dateFilter').value;
+            loadOrders(selectedDate);
+        });
+
+        document.getElementById('allTimeBtn').addEventListener('click', () => {
+            loadOrders(null);
+        });
+
+        function loadOrders(filterDate) {
+            const ordersRef = db.ref('orders');
+            ordersRef.once('value').then((snapshot) => {
+                const data = snapshot.val();
+                const ordersListTable = document.getElementById('ordersListTable');
+                const productsSummaryTable = document.getElementById('productsSummaryTable');
+                
+                ordersListTable.innerHTML = '';
+                productsSummaryTable.innerHTML = '';
+
+                if (!data) {
+                    ordersListTable.innerHTML = '<tr><td colspan="4" class="text-center p-4 text-gray-500">אין הזמנות במסד הנתונים</td></tr>';
+                    document.getElementById('totalRevenue').innerText = '₪0';
+                    document.getElementById('totalOrdersCount').innerText = '0';
+                    return;
+                }
+
+                let totalRev = 0;
+                let orderCount = 0;
+                let productStats = {}; 
+                let filteredOrders = [];
+
+                Object.keys(data).forEach(key => {
+                    const order = data[key];
+                    let orderDate = order.date || (order.timestamp ? order.timestamp.split('T')[0] : '');
+                    
+                    if (!filterDate || orderDate === filterDate) {
+                        filteredOrders.push(order);
+                        totalRev += Number(order.total || 0);
+                        orderCount++;
+
+                        if (order.items && Array.isArray(order.items)) {
+                            order.items.forEach(item => {
+                                let pName = item.name || 'מוצר לא ידוע';
+                                let pQty = Number(item.quantity || 1);
+                                let pPrice = Number(item.price || 0) * pQty;
+
+                                if (!productStats[pName]) {
+                                    productStats[pName] = { count: 0, revenue: 0 };
+                                }
+                                productStats[pName].count += pQty;
+                                productStats[pName].revenue += pPrice;
+                            });
+                        }
+                    }
+                });
+
+                document.getElementById('totalRevenue').innerText = '₪' + totalRev;
+                document.getElementById('totalOrdersCount').innerText = orderCount;
+
+                if (Object.keys(productStats).length === 0) {
+                    productsSummaryTable.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-500">אין נתונים לתאריך זה</td></tr>';
+                } else {
+                    Object.keys(productStats).forEach(pName => {
+                        let stat = productStats[pName];
+                        productsSummaryTable.innerHTML += `
+                            <tr class="hover:bg-gray-50">
+                                <td class="p-3 border">${pName}</td>
+                                <td class="p-3 border font-bold">${stat.count}</td>
+                                <td class="p-3 border text-green-600 font-bold">₪${stat.revenue}</td>
+                            </tr>
+                        `;
+                    });
+                }
+
+                if (filteredOrders.length === 0) {
+                    ordersListTable.innerHTML = '<tr><td colspan="4" class="text-center p-4 text-gray-500">אין הזמנות לתאריך זה</td></tr>';
+                } else {
+                    filteredOrders.reverse().forEach(order => {
+                        let itemsText = '';
+                        if (order.items && Array.isArray(order.items)) {
+                            itemsText = order.items.map(i => `${i.name} (x${i.quantity})`).join(', ');
+                        }
+                        ordersListTable.innerHTML += `
+                            <tr class="hover:bg-gray-50">
+                                <td class="p-3 border text-sm text-gray-600">${order.timestamp || 'לא ידוע'}</td>
+                                <td class="p-3 border font-semibold">${order.customerName || 'אורח'}</td>
+                                <td class="p-3 border">${itemsText}</td>
+                                <td class="p-3 border text-blue-600 font-bold">₪${order.total || 0}</td>
+                            </tr>
+                        `;
+                    });
+                }
+            });
+        }
+
+        loadOrders(todayStr);
+    </script>
+</body>
+</html>
