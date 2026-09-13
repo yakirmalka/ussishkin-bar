@@ -13,7 +13,7 @@
 <body class="bg-gray-100 min-h-screen p-4">
     <div class="max-w-4xl mx-auto bg-white rounded-xl shadow-lg p-6">
         <div class="flex justify-between items-center mb-6 border-b pb-4">
-            <h1 class="text-2xl font-bold text-gray-800">📊 סיכום יומי ופילוח הזמנות</h1>
+            <h1 class="text-2xl font-bold text-gray-800">📊 סיכום ופילוח הזמנות</h1>
             <a href="index.html" class="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition">חזרה לניהול</a>
         </div>
 
@@ -21,14 +21,14 @@
         <div class="mb-6 flex flex-wrap items-center gap-4 bg-gray-50 p-4 rounded-lg">
             <label for="dateFilter" class="font-bold text-gray-700">בחר תאריך לסיכום:</label>
             <input type="date" id="dateFilter" class="border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <button id="filterBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">הצג סיכום</button>
-            <button id="allTimeBtn" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition">הצג הכל</button>
+            <button id="filterBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">סין לפי תאריך</button>
+            <button id="allTimeBtn" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition">הצג הכל (היסטוריה מלאה)</button>
         </div>
 
         <!-- כרטיסי סיכום ראשיים -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg text-center">
-                <h3 class="text-gray-600 font-semibold">סה"כ הכנסות לתקופה</h3>
+                <h3 class="text-gray-600 font-semibold">סה"כ הכנסות לתקופה הנבחרת</h3>
                 <p id="totalRevenue" class="text-3xl font-bold text-blue-600 mt-2">₪0</p>
             </div>
             <div class="bg-purple-50 border border-purple-200 p-4 rounded-lg text-center">
@@ -63,7 +63,7 @@
                 <table class="w-full text-right border-collapse">
                     <thead>
                         <tr class="bg-gray-200 text-gray-700">
-                            <th class="p-3 border">שעה / תאריך</th>
+                            <th class="p-3 border">תאריך ושעה</th>
                             <th class="p-3 border">שם הלקוח</th>
                             <th class="p-3 border">מס' חבר</th>
                             <th class="p-3 border">משקה</th>
@@ -86,8 +86,8 @@
         firebase.initializeApp(firebaseConfigSummary);
         const db = firebase.database();
 
-        const todayStr = new Date().toISOString().split('T')[0];
-        document.getElementById('dateFilter').value = todayStr;
+        // כברירת מחדל נטען את כל הנתונים (היסטוריה מלאה) כדי שום דבר לא יתפספס
+        loadOrders(null);
 
         document.getElementById('filterBtn').addEventListener('click', () => {
             const selectedDate = document.getElementById('dateFilter').value;
@@ -95,6 +95,7 @@
         });
 
         document.getElementById('allTimeBtn').addEventListener('click', () => {
+            document.getElementById('dateFilter').value = '';
             loadOrders(null);
         });
 
@@ -109,9 +110,10 @@
                 productsSummaryTable.innerHTML = '';
 
                 if (!data) {
-                    ordersListTable.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-500">אין הזמנות במסד הנתונים</td></tr>';
+                    ordersListTable.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-500">אין הזמנות במסד הנתונים בכלל</td></tr>';
                     document.getElementById('totalRevenue').innerText = '₪0';
                     document.getElementById('totalOrdersCount').innerText = '0';
+                    productsSummaryTable.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-500">אין נתונים</td></tr>';
                     return;
                 }
 
@@ -124,29 +126,26 @@
                     const order = data[key];
                     
                     let orderDate = '';
-                    let timeFormatted = 'לא ידוע';
+                    let dateTimeFormatted = 'לא ידוע';
 
                     if (order.timestamp) {
                         try {
                             const dateObj = new Date(typeof order.timestamp === 'number' ? order.timestamp : Number(order.timestamp) || order.timestamp);
                             if (!isNaN(dateObj.getTime())) {
                                 orderDate = dateObj.toISOString().split('T')[0];
-                                timeFormatted = dateObj.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                                dateTimeFormatted = dateObj.toLocaleString('he-IL');
                             } else if (typeof order.timestamp === 'string') {
                                 orderDate = order.timestamp.split('T')[0];
-                                timeFormatted = order.timestamp;
+                                dateTimeFormatted = order.timestamp;
                             }
                         } catch (e) {
                             console.error('Error parsing date:', e);
                         }
                     }
 
-                    if (!orderDate) {
-                        orderDate = todayStr;
-                    }
-
+                    // סינון לפי תאריך רק אם המשתמש בחר תאריך ספציפי
                     if (!filterDate || orderDate === filterDate) {
-                        filteredOrders.push({ ...order, timeFormatted });
+                        filteredOrders.push({ ...order, dateTimeFormatted });
                         
                         let orderTotal = (Number(order.price) || 0) * (Number(order.qty) || 1);
                         totalRev += orderTotal;
@@ -168,7 +167,7 @@
                 document.getElementById('totalOrdersCount').innerText = orderCount;
 
                 if (Object.keys(productStats).length === 0) {
-                    productsSummaryTable.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-500">אין נתונים לתאריך זה</td></tr>';
+                    productsSummaryTable.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-500">אין נתונים לתקופה זו</td></tr>';
                 } else {
                     Object.keys(productStats).forEach(pName => {
                         let stat = productStats[pName];
@@ -183,13 +182,15 @@
                 }
 
                 if (filteredOrders.length === 0) {
-                    ordersListTable.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-500">אין הזמנות לתאריך זה</td></tr>';
+                    ordersListTable.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-500">אין הזמנות לתקופה זו</td></tr>';
                 } else {
                     filteredOrders.reverse().forEach(order => {
                         let orderTotal = (Number(order.price) || 0) * (Number(order.qty) || 1);
+                        ordersListTable.innerHTML => { // Note: innerHTML assignment fixed below in mind
+                        }
                         ordersListTable.innerHTML += `
                             <tr class="hover:bg-gray-50">
-                                <td class="p-3 border text-sm text-gray-600">${order.timeFormatted}</td>
+                                <td class="p-3 border text-sm text-gray-600">${order.dateTimeFormatted}</td>
                                 <td class="p-3 border font-semibold">${order.clientName || 'אורח'}</td>
                                 <td class="p-3 border">${order.memberId || '-'}</td>
                                 <td class="p-3 border">${order.drink || ''}</td>
@@ -201,8 +202,6 @@
                 }
             });
         }
-
-        loadOrders(todayStr);
     </script>
 </body>
 </html>
