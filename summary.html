@@ -50,6 +50,164 @@
                         </tr>
                     </thead>
                     <tbody id="productsSummaryTable">
+                        <tr><td colspan="3" class="text-center p-4 text-gray-500">טוען נתונים...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- פירוט כל ההזמנות -->
+        <div>
+            <h2 class="text-xl font-bold text-gray-800 mb-3">📝 פירוט הזמנות</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-right border-collapse">
+                    <thead>
+                        <tr class="bg-gray-200 text-gray-700">
+                            <th class="p-3 border">שעה / תאריך</th>
+                            <th class="p-3 border">שם הלקוח</th>
+                            <th class="p-3 border">מס' חבר</th>
+                            <th class="p-3 border">משקה</th>
+                            <th class="p-3 border">כמות</th>
+                            <th class="p-3 border">סה"כ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ordersListTable">
+                        <tr><td colspan="6" class="text-center p-4 text-gray-500">טוען נתונים...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            databaseURL: "https://ussishkinpub-default-rtdb.europe-west1.firebasedatabase.app"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        const todayStr = new Date().toISOString().split('T')[0];
+        document.getElementById('dateFilter').value = todayStr;
+
+        document.getElementById('filterBtn').addEventListener('click', () => {
+            const selectedDate = document.getElementById('dateFilter').value;
+            loadOrders(selectedDate);
+        });
+
+        document.getElementById('allTimeBtn').addEventListener('click', () => {
+            loadOrders(null);
+        });
+
+        function loadOrders(filterDate) {
+            const ordersRef = db.ref('orders');
+            ordersRef.once('value').then((snapshot) => {
+                const data = snapshot.val();
+                const ordersListTable = document.getElementById('ordersListTable');
+                const productsSummaryTable = document.getElementById('productsSummaryTable');
+                
+                ordersListTable.innerHTML = '';
+                productsSummaryTable.innerHTML = '';
+
+                if (!data) {
+                    ordersListTable.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-500">אין הזמנות במסד הנתונים</td></tr>';
+                    document.getElementById('totalRevenue').innerText = '₪0';
+                    document.getElementById('totalOrdersCount').innerText = '0';
+                    return;
+                }
+
+                let totalRev = 0;
+                let orderCount = 0;
+                let productStats = {}; 
+                let filteredOrders = [];
+
+                Object.keys(data).forEach(key => {
+                    const order = data[key];
+                    
+                    // המרת ה-timestamp למחרוזת תאריך תקפה (YYYY-MM-DD)
+                    let orderDate = '';
+                    let timeFormatted = '';
+                    if (order.timestamp) {
+                        const dateObj = new Date(order.timestamp);
+                        orderDate = dateObj.toISOString().split('T')[0];
+                        timeFormatted = dateObj.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+                    }
+
+                    if (!filterDate || orderDate === filterDate) {
+                        filteredOrders.push({ ...order, timeFormatted });
+                        
+                        let orderTotal = (Number(order.price) || 0) * (Number(order.qty) || 1);
+                        totalRev += orderTotal;
+                        orderCount++;
+
+                        let pName = order.drink || 'מוצר לא ידוע';
+                        let pQty = Number(order.qty || 1);
+                        let pPrice = orderTotal;
+
+                        if (!productStats[pName]) {
+                            productStats[pName] = { count: 0, revenue: 0 };
+                        }
+                        productStats[pName].count += pQty;
+                        productStats[pName].revenue += pPrice;
+                    }
+                });
+
+                document.getElementById('totalRevenue').innerText = '₪' + totalRev;
+                document.getElementById('totalOrdersCount').innerText = orderCount;
+
+                if (Object.keys(productStats).length === 0) {
+                    productsSummaryTable.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-500">אין נתונים לתאריך זה</td></tr>';
+                } else {
+                    Object.keys(productStats).forEach(pName => {
+                        let stat = productStats[pName];
+                        productsSummaryTable.innerHTML += `
+                            <tr class="hover:bg-gray-50">
+                                <td class="p-3 border">${pName}</td>
+                                <td class="p-3 border font-bold">${stat.count}</td>
+                                <td class="p-3 border text-green-600 font-bold">₪${stat.revenue}</td>
+                            </tr>
+                        `;
+                    });
+                }
+
+                if (filteredOrders.length === 0) {
+                    ordersListTable.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-500">אין הזמנות לתאריך זה</td></tr>';
+                } else {
+                    filteredOrders.reverse().forEach(order => {
+                        let orderTotal = (Number(order.price) || 0) * (Number(order.qty) || 1);
+                        ordersListTable.innerHTML += `
+                            <tr class="hover:bg-gray-50">
+                                <td class="p-3 border text-sm text-gray-600">${order.timeFormatted || 'לא ידוע'}</td>
+                                <td class="p-3 border font-semibold">${order.clientName || 'אורח'}</td>
+                                <td class="p-3 border">${order.memberId || '-'}</td>
+                                <td class="p-3 border">${order.drink || ''}</td>
+                                <td class="p-3 border">${order.qty || 1}</td>
+                                <td class="p-3 border text-blue-600 font-bold">₪${orderTotal}</td>
+                            </tr>
+                        `;
+                    });
+                }
+            });
+        }
+
+        loadOrders(todayStr);
+    </script>
+</body>
+</html>            </div>
+        </div>
+
+        <!-- פילוח מוצרים נמכרים -->
+        <div class="mb-8">
+            <h2 class="text-xl font-bold text-gray-800 mb-3">🍺 פילוח מוצרים שנמכרו</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-right border-collapse">
+                    <thead>
+                        <tr class="bg-gray-200 text-gray-700">
+                            <th class="p-3 border">שם המוצר</th>
+                            <th class="p-3 border">כמות שנמכרה</th>
+                            <th class="p-3 border">סה"כ הכנסה מהמוצר</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productsSummaryTable">
                         <tr><td colspan="3" class="text-center p-4 text-gray-500">בחר תאריך או טען נתונים</td></tr>
                     </tbody>
                 </table>
